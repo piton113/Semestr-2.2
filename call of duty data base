@@ -1,0 +1,169 @@
+import dotenv from 'dotenv';
+import pg from 'pg';
+dotenv.config();
+
+const { Pool } = pg;
+const pool = new Pool({
+   connectionString: process.env.DB_URL,
+   ssl: false 
+});
+
+const initializeDatabase = async () => {
+   console.log('Initializing Call of Duty (Modern Warfare) database...');
+
+   const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS modernWarfare (
+    id SERIAL PRIMARY KEY,
+    gun_name TEXT NOT NULL,              
+    weapon_class TEXT DEFAULT 'Assault Rifle',        
+    fire_rate_rpm INTEGER,       
+    reload_speed_sec NUMERIC(4, 2),           
+    attachment_setup TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+  `;
+   try {
+      await pool.query(createTableQuery);
+      console.log('The modernWarfare Loadout table is ready.');
+   } catch (error) {
+      console.error('Error initializing database:', error.message);
+      throw error;
+   }
+};
+
+// 2. INSERT — Додавання нової зброї
+async function addWeapon(gun_name, weapon_class, fire_rate_rpm, reload_speed_sec, attachment_setup) {
+   const query = `
+        INSERT INTO modernWarfare (
+            gun_name, weapon_class, fire_rate_rpm, reload_speed_sec, attachment_setup
+        ) 
+        VALUES ($1, $2, $3, $4, $5) 
+        RETURNING *`;
+
+   const values = [gun_name, weapon_class, fire_rate_rpm, reload_speed_sec, attachment_setup];
+
+   try {
+      const res = await pool.query(query, values);
+      console.log('Weapon added to armory:', res.rows[0]);
+   } catch (err) {
+      console.error('Error adding weapon:', err.message);
+   }
+}
+
+// 3. SELECT — Перегляд усієї зброї
+async function getAllWeapons() {
+   const res = await pool.query('SELECT id, gun_name, weapon_class, fire_rate_rpm, attachment_setup FROM modernWarfare');
+   console.table(res.rows);
+}
+
+async function weaponExists(id) {
+   const res = await pool.query('SELECT * FROM modernWarfare WHERE id = $1', [id]);
+   return res.rows.length > 0;
+}
+
+// 4. DELETE — Видалення зброї за ID
+async function deleteWeapon(id) {
+   if (isNaN(id) || id <= 0) {
+      console.log("Error: Invalid ID provided.");
+      return;
+   }
+
+   if (!(await weaponExists(id))) {
+      console.error(`Error: Weapon with ID ${id} not found in armory.`);
+      return;
+   }
+
+   await pool.query('DELETE FROM modernWarfare WHERE id = $1', [id]);
+   console.log(`Weapon with ID ${id} has been decommissioned.`);
+}
+
+(async () => {
+   try {
+      await initializeDatabase();
+      
+      const command = process.argv[2];
+
+      switch(command) {
+
+      case "list": {
+         await getAllWeapons();
+         break;
+      }
+      
+      case "add": { 
+         if (process.argv.length < 8) {
+            console.log("Invalid arguments!");
+            console.log("Usage: node dataBase.js add <gun_name> <weapon_class> <fire_rate_rpm> <reload_speed_sec> <attachment_setup>");
+            console.log("Example: node dataBase.js add M4A1 'Assault Rifle' 800 2.4 'Monolithic Suppressor'");
+            break;
+         }
+
+         await addWeapon(
+            process.argv[3],
+            process.argv[4],
+            parseInt(process.argv[5]),
+            parseFloat(process.argv[6]),
+            process.argv[7]
+         );
+         break;
+      }
+
+      case "update": {
+         if (process.argv.length < 6) {
+            console.log("Usage: node dataBase.js update <id> <column_name> <new_value>");
+            console.log("Columns: gun_name, weapon_class, fire_rate_rpm, reload_speed_sec, attachment_setup");
+            break;
+         }
+
+         const id = parseInt(process.argv[3]);
+         const column = process.argv[4];
+         let value = process.argv[5];
+
+         const allowedColumns = ['gun_name', 'weapon_class', 'fire_rate_rpm', 'reload_speed_sec', 'attachment_setup'];
+         if (!allowedColumns.includes(column)) {
+            console.log(`Error: Column "${column}" does not exist.`);
+            break;
+         }
+
+         if (column === 'fire_rate_rpm' || column === 'reload_speed_sec') {
+            value = parseFloat(value);
+         }
+
+         try {
+            const query = `UPDATE modernWarfare SET ${column} = $1 WHERE id = $2 RETURNING *`;
+            const res = await pool.query(query, [value, id]);
+
+            if (res.rows.length === 0) {
+               console.log(`Error: Weapon ID ${id} not found.`);
+            } else {
+               console.log('Weapon data updated:', res.rows[0]);
+            }
+         } catch (err) {
+            console.error('Database error:', err.message);
+         }
+         break;
+      }
+
+      case "delete": {
+         const id = parseInt(process.argv[3]);
+         await deleteWeapon(id);
+         break;
+      }
+
+      case "help": {
+         console.log("--- COD Armory CLI ---");
+         console.log("node dataBase.js list                     -> Show all weapons");
+         console.log("node dataBase.js add <name> <class> ...   -> Add new weapon");
+         console.log("node dataBase.js update <id> <col> <val>  -> Update weapon info");
+         console.log("node dataBase.js delete <id>              -> Remove weapon");
+         break;
+      }
+   }
+
+   } catch (err) {
+      console.error("Critical Error:", err.message);
+   } finally {
+      console.log('Closing armory connection...');
+      process.exit();
+   }
+})();
