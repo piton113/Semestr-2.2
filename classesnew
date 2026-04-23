@@ -1,0 +1,35 @@
+class Cat{
+    name;
+    breed;
+    age;
+
+    constructor ({name, breed, age}){
+        this.name = name;
+        this.breed = breed;
+        this.age = age;
+    }
+
+    getInfo(){
+        if(this.age > 100){
+            return `ancient Cat named ${this.name.toUpperCase()}`
+        }
+        return `name: ${this.name} of ${this.age} years`
+    }
+}
+
+const myCat = new Cat({
+    name: 'asteroid destroyer',
+    age: 150,
+    breed: 'люта', 
+});
+
+const myCat1 = new Cat({
+    name: 'Gawd',
+    age: 4,
+    breed: 'безхатко', 
+});
+
+const info = myCat.getInfo();
+
+console.log('info >>>', info);
+console.log('myCat info >>>', myCat1.getInfo());
